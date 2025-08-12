@@ -1,0 +1,147 @@
+local player = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local camera = workspace.CurrentCamera
+local helper = player.PlayerGui:FindFirstChild("Helper") or (player:FindFirstChild("PlayerScripts") and player.PlayerScripts:FindFirstChild("Helper"))
+local reloadRemote = (ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Reload")) or nil
+
+local screenGui = Instance.new("ScreenGui", player.PlayerGui)
+screenGui.ResetOnSpawn = false
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 200, 0, 50)
+button.Position = UDim2.new(0.5, -100, 0.5, -25)
+button.Text = "Auto Fire"
+button.Font = Enum.Font.GothamBold
+button.TextSize = 20
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Parent = screenGui
+
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new{
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 0))
+}
+gradient.Parent = button
+
+task.spawn(function()
+	while true do
+		for i = 0, 360 do
+			gradient.Rotation = i
+			task.wait(0.02)
+		end
+	end
+end)
+
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+UIS.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		update(input)
+	end
+end)
+
+local function getAmmo(tool)
+	if not tool then return nil end
+	local a = tool:GetAttribute("ClientAmmo") or tool:GetAttribute("Ammo") or tool:GetAttribute("AmmoCount")
+	if a ~= nil then return a end
+	local v = tool:FindFirstChild("ClientAmmo") or tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue") or tool:FindFirstChild("AmmoCount")
+	if v and (v:IsA("IntValue") or v:IsA("NumberValue")) then return v.Value end
+	return nil
+end
+
+local function doReload(tool)
+	if helper and type(helper.Fire) == "function" then
+		pcall(function() helper:Fire("Reload") end)
+	end
+	if reloadRemote then
+		pcall(function()
+			if reloadRemote:IsA("RemoteEvent") then
+				reloadRemote:FireServer(tool and tool.Name or nil)
+			elseif reloadRemote:IsA("RemoteFunction") then
+				reloadRemote:InvokeServer(tool and tool.Name or nil)
+			end
+		end)
+	end
+end
+
+local function waitForAmmo(tool, timeout)
+	timeout = timeout or 3
+	local start = tick()
+	while tick() - start < timeout do
+		local a = getAmmo(tool)
+		if a and a > 0 then return true end
+		task.wait(0.05)
+	end
+	return false
+end
+
+local lastReload = 0
+local holding = false
+button.MouseButton1Down:Connect(function()
+	holding = true
+	while holding do
+		local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+		if tool then
+			local ammo = getAmmo(tool)
+			if ammo ~= nil and ammo <= 0 then
+				if tick() - lastReload > 0.3 then
+					doReload(tool)
+					lastReload = tick()
+				end
+				waitForAmmo(tool, 3)
+			else
+				local modules = ReplicatedStorage:FindFirstChild("Modules")
+				local modulePath = modules and modules:FindFirstChild("Guns") and modules.Guns:FindFirstChild(tool.Name)
+				if modulePath then
+					local ok, gunModule = pcall(require, modulePath)
+					if ok and gunModule and type(gunModule.fire) == "function" then
+						local origin = camera.CFrame.Position
+						local direction = (camera.CFrame.LookVector * 500) + origin
+						local args = {
+							velocity = 2000,
+							bullet = (ReplicatedStorage.Models and ReplicatedStorage.Models.Bullets and ReplicatedStorage.Models.Bullets.Default) or nil,
+							origin = origin,
+							direction = direction
+						}
+						pcall(function() gunModule.fire(tool, args) end)
+					end
+				else
+					pcall(function()
+						if tool.Activate then tool:Activate() end
+					end)
+				end
+			end
+		end
+		task.wait(0.05)
+	end
+end)
+button.MouseButton1Up:Connect(function()
+	holding = false
+end)
+button.MouseLeave:Connect(function()
+	holding = false
+end)
+
+--Credits to Yaazkidd
+--Hope you enjoy :)
