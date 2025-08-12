@@ -63,11 +63,16 @@ UIS.InputChanged:Connect(function(input)
 	end
 end)
 
+local function getAmmoObject(tool)
+	if not tool then return nil end
+	return tool:FindFirstChild("ClientAmmo") or tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue") or tool:FindFirstChild("AmmoCount")
+end
+
 local function getAmmo(tool)
 	if not tool then return nil end
 	local a = tool:GetAttribute("ClientAmmo") or tool:GetAttribute("Ammo") or tool:GetAttribute("AmmoCount")
 	if a ~= nil then return a end
-	local v = tool:FindFirstChild("ClientAmmo") or tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue") or tool:FindFirstChild("AmmoCount")
+	local v = getAmmoObject(tool)
 	if v and (v:IsA("IntValue") or v:IsA("NumberValue")) then return v.Value end
 	return nil
 end
@@ -87,16 +92,24 @@ local function doReload(tool)
 	end
 end
 
-local function waitForAmmo(tool, timeout)
-	timeout = timeout or 3
-	local start = tick()
-	while tick() - start < timeout do
-		local a = getAmmo(tool)
-		if a and a > 0 then return true end
-		task.wait(0.05)
+local function bindAmmoListener(tool)
+	local ammoObj = getAmmoObject(tool)
+	if ammoObj and (ammoObj:IsA("IntValue") or ammoObj:IsA("NumberValue")) then
+		ammoObj:GetPropertyChangedSignal("Value"):Connect(function()
+			if ammoObj.Value <= 0 then
+				doReload(tool)
+			end
+		end)
 	end
-	return false
 end
+
+player.CharacterAdded:Connect(function(char)
+	char.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then
+			bindAmmoListener(child)
+		end
+	end)
+end)
 
 local lastReload = 0
 local holding = false
@@ -111,7 +124,6 @@ button.MouseButton1Down:Connect(function()
 					doReload(tool)
 					lastReload = tick()
 				end
-				waitForAmmo(tool, 3)
 			else
 				local modules = ReplicatedStorage:FindFirstChild("Modules")
 				local modulePath = modules and modules:FindFirstChild("Guns") and modules.Guns:FindFirstChild(tool.Name)
@@ -147,3 +159,6 @@ end)
 
 --Credits to Yaazkidd
 --Hope you enjoy :)
+--Script made by Yaazkidd no other else
+--Only on Bloody Playground !!
+--Gun script !! Work on all guns.
